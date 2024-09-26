@@ -335,6 +335,35 @@ class StaticCacheConfig(CacheConfig):
             )
 
 
+@dataclass
+class OffloadedCacheConfig(CacheConfig):
+    """
+    Configuration class for offloaded cache settings.
+    """
+
+    cache_implementation = "offloaded"
+
+    def __init__(self, offload_device="cpu"):
+        self.offload_device = offload_device
+
+    def validate(self):
+        """Validates if the arguments passed are correct"""
+
+        incorrect_arg_msg = (
+            "Some of the keys in `cache_config` are defined incorrectly. `{key}` should be {correct_value}` "
+            "but found {found_value}"
+        )
+
+        if self.offload_device not in ["cpu", "cuda", "disk"]:
+            raise ValueError(
+                incorrect_arg_msg.format(
+                    key="offload_device",
+                    correct_value="`cpu`, `cuda`, `disk`",
+                    found_value=self.offload_device,
+                ),
+            )
+
+
 class DynamicCache(Cache):
     """
     A cache that grows dynamically as more tokens are generated. This is the default for generative models.
@@ -1872,12 +1901,14 @@ class OffloadedStaticCache(StaticCache):
     def __init__(
         self,
         config: PretrainedConfig,
+        batch_size: int,
         max_batch_size: int,
         max_cache_len: Optional[int],
         device: Union[str, torch.device],
         dtype: Optional[torch.dtype] = None,
         offload_device: Union[str, torch.device] = torch.device("cpu"),
     ) -> None:
+        self.batch_size = batch_size
         self.max_batch_size = max_batch_size
         self.max_cache_len = config.max_position_embeddings if max_cache_len is None else max_cache_len
         self.device = torch.device(device)

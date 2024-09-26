@@ -31,6 +31,7 @@ from ..cache_utils import (
     EncoderDecoderCache,
     OffloadedCache,
     QuantizedCacheConfig,
+    CacheConfig,
 )
 from ..configuration_utils import PretrainedConfig
 from ..integrations.deepspeed import is_deepspeed_zero3_enabled
@@ -1394,7 +1395,7 @@ class GenerationMixin:
         return model_kwargs
 
     def _get_cache(
-        self, cache_implementation: str, batch_size: int, max_cache_len: int, device: torch.device, model_kwargs
+        self, cache_implementation: str, batch_size: int, max_cache_len: int, device: torch.device, model_kwargs, cache_config: CacheConfig=None
     ) -> Cache:
         """
         Sets a cache for `generate`, that will persist across calls. A new cache will only be initialized a
@@ -1466,13 +1467,21 @@ class GenerationMixin:
             layer_device_map = get_layer_device_map(execution_device_map)
 
             cache_kwargs = {
-                "config": self.config.get_text_config(),
+                "config": self.config if hasattr(self.config, "text_config") else self.config,
+                "batch_size": batch_size,
                 "max_batch_size": batch_size,
                 "max_cache_len": max_cache_len,
                 "device": device,
                 "dtype": cache_dtype,
                 "layer_device_map": layer_device_map,
             }
+            keys = list(cache_kwargs.keys())
+            arguments = cache_cls.__init__.__code__.co_varnames
+            for key in keys:
+                if key not in arguments:
+                    cache_kwargs.pop(key)
+            if cache_implementation == "offloaded_static":
+                cache_kwargs["offload_device"] = cache_config.offload_device
             self._cache = cache_cls(**cache_kwargs)
             if requires_cross_attention_cache:
                 encoder_kwargs = cache_kwargs.copy()
@@ -1569,6 +1578,7 @@ class GenerationMixin:
                     max_cache_len=max_cache_length,
                     device=device,
                     model_kwargs=model_kwargs,
+                    cache_config=generation_config.cache_config,
                 )
             elif generation_config.cache_implementation == "quantized":
                 if not self._supports_quantized_cache:
